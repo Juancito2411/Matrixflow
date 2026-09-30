@@ -41,8 +41,8 @@ origins = [
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://matrixflow.vercel.app",  # Reemplaza con tu dominio exacto de Vercel si es distinto
-    "https://*.vercel.app"          # Permite cualquier subdominio temporal de Vercel
+    "https://matrixflow-mrtw7jhf0-juancito2411.vercel.app",
+    "https://*.vercel.app"
 ]
 
 app.add_middleware(
