@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from passlib.context import CryptContext
-from passlib.exc import UnknownHashError
+import bcrypt
 from jose import jwt, JWTError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -11,24 +10,31 @@ SECRET_KEY = "MATRIXFLOW_SECRET_KEY_SUPER_SECURE"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 horas
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Verifica si la contraseña ingresada coincide con el hash almacenado.
-    Evita caídas del servidor si el hash está corrupto o mal formateado.
+    Verifica si la contraseña ingresada coincide con el hash almacenado usando bcrypt directo.
+    Soporta hashes $2a$, $2b$ y descarta fallos por compatibilidad de passlib.
     """
+    if not plain_password or not hashed_password:
+        return False
     try:
-        return pwd_context.verify(plain_password, hashed_password)
-    except (UnknownHashError, ValueError, TypeError):
+        # Convertir a bytes para la verificación directa con bcrypt
+        password_bytes = plain_password.encode('utf-8')
+        hash_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hash_bytes)
+    except Exception as e:
+        print(f"⚠️ Error al verificar contraseña con bcrypt: {e}")
         return False
 
 def get_password_hash(password: str) -> str:
     """
     Genera un hash bcrypt a partir de la contraseña en texto plano.
     """
-    return pwd_context.hash(password)
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
@@ -65,14 +71,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 def check_roles(allowed_roles: list):
     """
     Control de Acceso basado en Roles (RBAC).
-    Normaliza y mapea automáticamente equivalencias de nombres de roles 
-    (ej. 'admin' -> 'administrador', 'analyst' -> 'analista') de forma 
-    insensible a mayúsculas/minúsculas.
     """
     def role_verifier(current_user: dict = Depends(get_current_user)):
         user_role = str(current_user.get("role", "")).strip().lower()
 
-        # Diccionario de equivalencias (Mapea inglés y alias a su forma canónica)
         role_alias_map = {
             "admin": "administrador",
             "administrador": "administrador",
@@ -82,10 +84,7 @@ def check_roles(allowed_roles: list):
             "consulta": "consulta"
         }
 
-        # Normalizar el rol proveniente del token
         normalized_user_role = role_alias_map.get(user_role, user_role)
-
-        # Normalizar la lista de roles permitidos requeridos por la ruta
         normalized_allowed_roles = [
             role_alias_map.get(str(r).strip().lower(), str(r).strip().lower()) 
             for r in allowed_roles
